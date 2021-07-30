@@ -17,28 +17,11 @@ from awswrangler._config import apply_configs
 from awswrangler.s3._delete import delete_objects
 from awswrangler.s3._fs import open_s3_object
 from awswrangler.s3._read_parquet import _read_parquet_metadata
-from awswrangler.s3._write import _COMPRESSION_2_EXT, _apply_dtype, _sanitize, _validate_args
+from awswrangler.s3._write import _COMPRESSION_2_EXT, _apply_dtype, _check_schema_changes, _sanitize, _validate_args
 from awswrangler.s3._write_concurrent import _WriteProxy
 from awswrangler.s3._write_dataset import _to_dataset
 
 _logger: logging.Logger = logging.getLogger(__name__)
-
-
-def _check_schema_changes(columns_types: Dict[str, str], table_input: Optional[Dict[str, Any]], mode: str) -> None:
-    if (table_input is not None) and (mode in ("append", "overwrite_partitions")):
-        catalog_cols: Dict[str, str] = {x["Name"]: x["Type"] for x in table_input["StorageDescriptor"]["Columns"]}
-        for c, t in columns_types.items():
-            if c not in catalog_cols:
-                raise exceptions.InvalidArgumentValue(
-                    f"Schema change detected: New column {c} with type {t}. "
-                    "Please pass schema_evolution=True to allow new columns "
-                    "behaviour."
-                )
-            if t != catalog_cols[c]:  # Data type change detected!
-                raise exceptions.InvalidArgumentValue(
-                    f"Schema change detected: Data type change on column {c} "
-                    f"(Old type: {catalog_cols[c]} / New type {t})."
-                )
 
 
 def _get_file_path(file_counter: int, file_path: str) -> str:
@@ -273,9 +256,7 @@ def to_parquet(  # pylint: disable=too-many-arguments,too-many-locals
     boto3_session : boto3.Session(), optional
         Boto3 Session. The default boto3 session will be used if boto3_session receive None.
     s3_additional_kwargs : Optional[Dict[str, Any]]
-        Forward to botocore requests. Valid parameters: "ACL", "Metadata", "ServerSideEncryption", "StorageClass",
-        "SSECustomerAlgorithm", "SSECustomerKey", "SSEKMSKeyId", "SSEKMSEncryptionContext", "Tagging",
-        "RequestPayer", "ExpectedBucketOwner".
+        Forwarded to botocore requests.
         e.g. s3_additional_kwargs={'ServerSideEncryption': 'aws:kms', 'SSEKMSKeyId': 'YOUR_KMS_KEY_ARN'}
     sanitize_columns : bool
         True to sanitize columns names (using `wr.catalog.sanitize_table_name` and `wr.catalog.sanitize_column_name`)
@@ -298,18 +279,18 @@ def to_parquet(  # pylint: disable=too-many-arguments,too-many-locals
     concurrent_partitioning: bool
         If True will increase the parallelism level during the partitions writing. It will decrease the
         writing time and increase the memory usage.
-        https://aws-data-wrangler.readthedocs.io/en/2.9.0/tutorials/022%20-%20Writing%20Partitions%20Concurrently.html
+        https://aws-data-wrangler.readthedocs.io/en/2.10.0/tutorials/022%20-%20Writing%20Partitions%20Concurrently.html
     mode: str, optional
         ``append`` (Default), ``overwrite``, ``overwrite_partitions``. Only takes effect if dataset=True.
         For details check the related tutorial:
-        https://aws-data-wrangler.readthedocs.io/en/2.9.0/stubs/awswrangler.s3.to_parquet.html#awswrangler.s3.to_parquet
+        https://aws-data-wrangler.readthedocs.io/en/2.10.0/stubs/awswrangler.s3.to_parquet.html#awswrangler.s3.to_parquet
     catalog_versioning : bool
         If True and `mode="overwrite"`, creates an archived version of the table catalog before updating it.
     schema_evolution : bool
         If True allows schema evolution (new or missing columns), otherwise a exception will be raised.
         (Only considered if dataset=True and mode in ("append", "overwrite_partitions"))
         Related tutorial:
-        https://aws-data-wrangler.readthedocs.io/en/2.9.0/tutorials/014%20-%20Schema%20Evolution.html
+        https://aws-data-wrangler.readthedocs.io/en/2.10.0/tutorials/014%20-%20Schema%20Evolution.html
     database : str, optional
         Glue/Athena catalog: Database name.
     table : str, optional
@@ -760,9 +741,7 @@ def store_parquet_metadata(  # pylint: disable=too-many-arguments
         https://docs.aws.amazon.com/athena/latest/ug/partition-projection-supported-types.html
         (e.g. {'col_name': '1', 'col2_name': '2'})
     s3_additional_kwargs : Optional[Dict[str, Any]]
-        Forward to botocore requests. Valid parameters: "ACL", "Metadata", "ServerSideEncryption", "StorageClass",
-        "SSECustomerAlgorithm", "SSECustomerKey", "SSEKMSKeyId", "SSEKMSEncryptionContext", "Tagging",
-        "RequestPayer", "ExpectedBucketOwner".
+        Forwarded to botocore requests.
         e.g. s3_additional_kwargs={'ServerSideEncryption': 'aws:kms', 'SSEKMSKeyId': 'YOUR_KMS_KEY_ARN'}
     boto3_session : boto3.Session(), optional
         Boto3 Session. The default boto3 session will be used if boto3_session receive None.
